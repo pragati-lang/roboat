@@ -1,0 +1,150 @@
+annotation class ActionsMarker
+
+/**
+ * Marker Interface to enforce correct method selection in IDE tab completion and context compile time scope enforcement
+ */
+@ActionsMarker
+interface Actions
+
+/**
+ * Marker class to indicate that this leaf does not contain any functionality
+ */
+object NoActions : Actions
+
+abstract class ScopedActions(protected val matcher: () -> Matcher<View>) : Actions {
+    fun isDisplayed(): Actions {
+        onView().check(matches(ViewMatchers.isDisplayed()))
+        return NoActions
+    }
+
+    fun hasTextInside(text: CharSequence, textMatcher: (CharSequence) -> Matcher<String> = { `is`<String>(it.toString()) }): Actions {
+        Espresso.onView(Matchers.allOf(
+                withText(textMatcher(text)),
+                 anyOf(isDescendantOfA(matcher()), matcher())
+        )).check(matches(ViewMatchers.isDisplayed()))
+        return NoActions
+    }
+
+    fun hasNoTextInside(text: CharSequence, textMatcher: (CharSequence) -> Matcher<String> = { `is`<String>(it.toString()) }): Actions {
+        Espresso.onView(allOf(
+                withText(textMatcher(text)),
+                anyOf(isDescendantOfA(matcher()), matcher())
+        )).check(doesNotExist())
+        return NoActions
+    }
+
+    protected fun onView() = Espresso.onView(allOf(matcher(), ViewMatchers.isDisplayed()))
+}
+
+/**
+ * Base Actions and Assertions for any view
+ */
+open class UiActions(matcher: () -> Matcher<View>) : ScopedActions(matcher) {
+    fun click(): Actions {
+        onView().perform(ViewActions.click())
+        return NoActions
+          }
+
+    fun isDisabled(): Actions {
+        onView().check(matches(not(ViewMatchers.isEnabled())))
+        return NoActions
+    }
+
+    fun isEnabled(): Actions {
+        onView().check(matches(ViewMatchers.isEnabled()))
+        return NoActions
+    }
+
+    // Fuzzy matches for any view with that text and with an arbitrary parent that matches the scope
+    fun hasText(text: CharSequence, textMatcher: (CharSequence) -> Matcher<String> = { `is`<String>(it.toString()) }): Actions {
+        Espresso.onView(Matchers.allOf(
+                withText(textMatcher(text)),
+                anyOf(withParent(matcher()), matcher())
+        )).check(matches(ViewMatchers.isDisplayed()))
+        return NoActions
+    }
+
+    fun hasEllipsizedText(): Actions {
+        Espresso.onView(Matchers.allOf(
+                android.support.test.espresso.matcher.LayoutMatchers.hasEllipsizedText(),
+                anyOf(withParent(matcher()), matcher())
+                  )).check(doesNotExist())
+        return NoActions
+    }
+
+    fun hasText(@IdRes resId: Int, textMatcher: (CharSequence) -> Matcher<String> = { `is`<String>(it.toString()) }): Actions {
+        hasText(ResString(resId), textMatcher)
+        return NoActions
+    }
+
+    fun hasTextComposed(vararg @IdRes resIds: Int, separator: CharSequence = "", textMatcher: (CharSequence) -> Matcher<String> = { `is`<String>(it.toString()) }): Actions {
+        hasText(ConcatenatedString(*resIds.map { ResString(it) }.toTypedArray(), separator = separator), textMatcher)
+        return NoActions
+    }
+
+    fun hasTextComposedAnyCase(vararg @IdRes resIds: Int, separator: CharSequence = ""): Actions {
+        hasTextComposed(resIds = *resIds, separator = separator, textMatcher = { equalToIgnoringCase(it.toString()) })
+        return NoActions
+         }
+
+    fun hasTextComposedAnyCase(vararg @IdRes resIds: Int, separator: CharSequence = ""): Actions {
+        hasTextComposed(resIds = *resIds, separator = separator, textMatcher = { equalToIgnoringCase(it.toString()) })
+        return NoActions
+    }
+
+    fun hasAnyCaseText(@IdRes resId: Int): Actions {
+        hasText(ResString(resId), textMatcher = { equalToIgnoringCase(it.toString()) })
+        return NoActions
+    }
+
+    fun hasImageTag(@DrawableRes resId: Int): Actions {
+        onView().check(matches(withTagValue(equalTo(resId.toString()))))
+        return NoActions
+    }
+
+    fun closeSoftKeyboard(): Actions {
+        Espresso.closeSoftKeyboard()
+        return NoActions
+           }
+}
+
+open class EditTextActions(matcher: () -> Matcher<View>) : UiActions(matcher) {
+    fun typeText(text: CharSequence): Actions {
+        onView().perform(ViewActions.click()).perform(ViewActions.typeText(text.toString()))
+        return NoActions
+    }
+
+    fun pressSearch(): Actions {
+        onView().perform(ViewActions.pressImeActionButton());
+        return NoActions
+    }
+}
+
+open class ScrollViewActions(matcher: () -> Matcher<View>) : ScopedActions(matcher) {
+    fun scrollTo(): Actions {
+        onView().perform(NestedScrollToAction())
+        return this
+         }
+}
+
+open class List(private val recyclerId: Int) : ScrollViewActions(idMatcher(recyclerId)) {
+    fun inItem(childCount: Int, action: UiActions.() -> Actions): Actions {
+        onView().perform(RecyclerViewActions.scrollToPosition<RecyclerView.ViewHolder>(childCount))
+        return UiActions({ RecyclerViewMatcher(recyclerId).atPosition(childCount)}).run(action)
+    }
+
+}
+
+open class Dialog(withTitle: CharSequence? = null) : UiActions({ withText(withTitle.toString()) }) {
+    fun inOkButton(action: UiActions.() -> Actions)
+            = UiActions(idMatcher(R.id.button1)).run(action)
+
+
+    fun inCancelButton(action: UiActions.() -> Actions)
+            = UiActions(idMatcher(R.id.button2)).run(action)
+             fun inButtonWithText(label: CharSequence, action: UiActions.() -> Actions) =
+            UiActions(textMatcher(label)).run(action)
+
+    fun inButtonWithText(@StringRes stringRes: Int, action: UiActions.() -> Actions) =
+            inButtonWithText(with(stringRes), action)
+            }
